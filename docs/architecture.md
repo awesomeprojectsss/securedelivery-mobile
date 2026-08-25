@@ -4,15 +4,15 @@
 
 The SecureDelivery Mobile application acts as the primary IoT device during the MVP.
 
-The mobile technology stack has not yet been selected.
+The mobile application uses Flutter with Dart.
 
-This document defines responsibilities, boundaries and required behavior without prematurely selecting a framework.
+This document defines the architectural responsibilities and boundaries of the Flutter application while leaving lower-level technology choices open where the team has not yet made a decision.
 
 ---
 
 ## 2. Physical MVP Model
 
-The smartphone is mounted horizontally on a flat surface of the SmartBox during tests.
+The smartphone is mounted horizontally on a flat surface of the delivery box during tests.
 
 This provides a known reference orientation that allows the MVP to test:
 
@@ -25,11 +25,55 @@ This provides a known reference orientation that allows the MVP to test:
 
 The mobile application represents one IoT-device implementation.
 
-Future SmartBoxes may use dedicated hardware.
+The Flutter application is the MVP implementation of the technical `Device`. `SmartBox` is the product-facing Dashboard label. Future Devices may use dedicated hardware.
 
 ---
 
-## 3. Responsibilities
+## 3. Technology Baseline
+
+The mobile MVP uses:
+
+- Flutter
+- Dart
+
+Flutter is the accepted application framework.
+
+Dart is the application language.
+
+The architecture should preserve Flutter-specific platform integrations behind explicit abstractions so that sensor collection, event detection, persistence and synchronization remain independently testable.
+
+The following choices are still open:
+
+- state management
+- local durable database/storage
+- background execution plugins
+- sensor plugins
+- GPS/location plugin
+- secure storage
+- networking package
+- WebSocket/MQTT support if adopted
+- dependency injection approach
+- test/mocking libraries
+
+These decisions should be recorded through ADRs when selected.
+
+---
+
+## Engineering Practice Boundary
+
+This architecture document defines SecureDelivery-specific boundaries and decisions.
+
+Framework-level implementation guidance is defined in the repository `AGENTS.md`.
+
+Human developers should also follow:
+
+- `docs/development-guide.pt-BR.md`
+- `docs/git-workflow.pt-BR.md`
+
+Implementations should remain idiomatic to Flutter and Dart and should prefer official/framework-native solutions over unnecessary custom abstractions.
+
+
+## 4. Responsibilities
 
 The mobile application owns:
 
@@ -45,13 +89,13 @@ The mobile application owns:
 - store-and-forward
 - retry
 - synchronization
-- QR Code activation presentation
+- Device QR Code activation presentation
 
 The mobile application does not own persistent server-side business truth.
 
 ---
 
-## 4. High-Level Architecture
+## 5. High-Level Architecture
 
 ```text
 ┌───────────────────────────┐
@@ -87,11 +131,11 @@ The mobile application does not own persistent server-side business truth.
       SecureDelivery Server
 ```
 
-Exact components depend on the selected framework.
+Exact components and Flutter packages depend on later architectural decisions.
 
 ---
 
-## 5. Monitoring Lifecycle
+## 6. Monitoring Lifecycle
 
 Minimum states:
 
@@ -108,7 +152,7 @@ The monitoring coordinator owns actual monitoring state.
 
 ---
 
-## 6. Sensor Layer
+## 7. Sensor Layer
 
 The sensor layer should abstract platform-specific APIs.
 
@@ -125,37 +169,97 @@ Consumers should not depend directly on low-level platform APIs.
 This supports:
 
 - testing
-- future framework changes
+- future replacement of platform plugins or device implementations
 - calibration
 - dedicated IoT-device evolution
 
 ---
 
-## 7. Sampling Strategy
+## 8. Sampling Strategy
 
-Initial target:
+Acquisition and transmission frequencies are independent.
+
+Initial MVP profile:
 
 ```text
-1 sample per second
+Raw IMU:                       50 Hz (~20 ms)
+Event detection:               high-frequency local processing
+GPS / ground speed:            up to 1 Hz
+normal Server telemetry:       one-minute summary
+network batch:                 normally every minute
+event evidence:                high-frequency window
 ```
 
-Sampling frequency and network transmission frequency are separate concerns.
+The 50 Hz IMU data feeds:
 
-The architecture must not equate "1 Hz sensor sampling" with "1 network request per second".
+- event detection;
+- rolling evidence buffering.
 
----
+GPS/speed samples feed:
 
-## 8. Event Detection Engine
+- minute navigation aggregation;
+- latest location;
+- speed context for events.
+
+The complete normal raw motion stream is not synchronized.
+
+Rates and quality thresholds are configurable and must be calibrated using real-device testing.
+
+## Navigation and Speed Processing
+
+Preferred speed source:
+
+```text
+GNSS / operating-system ground speed
+```
+
+GPS/speed sampling target:
+
+```text
+up to 1 Hz
+```
+
+Do not derive normal delivery speed by integrating accelerometer data.
+
+If direct ground speed is unavailable, a consecutive-GPS-fix fallback may be used only with explicit quality filtering.
+
+Initial configurable movement threshold:
+
+```text
+1.5 m/s (~5.4 km/h)
+```
+
+For every one-minute summary, compute at least:
+
+```text
+distance traveled
+moving duration
+stopped duration
+maximum speed
+```
+
+Maintain a short navigation context buffer so motion events can add, when reliable:
+
+```text
+speed at event
+average speed in the previous 5 seconds
+maximum speed in the previous 10 seconds
+moving flag
+```
+
+GPS quality failures must produce missing/unknown context rather than fabricated values.
+
+## 9. Event Detection Engine
 
 Event detection runs locally.
 
-Initial event categories:
+Initial Device-generated event types:
 
 ```text
-STRONG_IMPACT
-CRITICAL_INCLINATION
-POSSIBLE_FALL
-ABNORMAL_MOVEMENT
+motion.strong_impact
+motion.critical_inclination
+motion.possible_fall
+motion.abnormal_movement
 ```
 
 The engine receives sensor samples and produces deterministic event decisions plus evidence.
@@ -166,7 +270,7 @@ Configuration should remain centralized.
 
 ---
 
-## 9. Event Evidence
+## 10. Event Evidence
 
 Detected events require evidence.
 
@@ -175,9 +279,11 @@ Conceptual structure:
 ```text
 DetectedEvent
  ├── eventId
- ├── type
+ ├── eventType
  ├── occurredAt
  ├── location
+ ├── detectorName
+ ├── detectorVersion
  ├── calculatedValues
  └── evidenceSamples[]
 ```
@@ -186,7 +292,23 @@ Evidence should be durable until successful server synchronization and retention
 
 ---
 
-## 10. Local Storage
+## Extensible Device Contract
+
+Cross-repository payloads follow `../../docs/contracts/`.
+
+The Mobile application sends generic sensor observations:
+
+```text
+namespaced key + typed value + optional unit
+```
+
+It sends Device-generated events through a stable generic envelope with an open namespaced `eventType`.
+
+The Device must be able to introduce new sensors and detectors without requiring server DTO changes when the common envelope remains sufficient.
+
+The detector implementation and version are part of event audit metadata.
+
+## 11. Local Storage
 
 Local persistence is required for correctness.
 
@@ -206,34 +328,29 @@ In-memory-only buffering is insufficient.
 
 ---
 
-## 11. Telemetry Batching
+## 12. Telemetry Batching
 
-Initial MVP strategy:
+The Device aggregates normal operational telemetry into one-minute period summaries.
 
-```text
-Sensor sampling: 1 second
-Batch interval: 1 minute
-```
+Each summary may contain:
 
-Conceptual:
+- Device state;
+- latest valid location;
+- `navigation.distance.traveled`;
+- `navigation.moving.duration`;
+- `navigation.stopped.duration`;
+- `navigation.speed.maximum`;
+- future generic business-value observations.
 
-```text
-60 approximate samples
-        ↓
-TelemetryBatch
-        ↓
-Local persistence
-        ↓
-Sync attempt
-```
+Completed summaries are persisted locally before synchronization.
 
-The exact number of samples may vary due to mobile scheduling and platform limitations.
+An online Device normally sends one period per batch.
 
-Do not assume perfect one-second scheduling.
+An offline Device may accumulate multiple summaries and send them later in one batch.
 
----
+Raw 50 Hz motion samples are not part of normal telemetry batching.
 
-## 12. Store-and-Forward
+## 13. Store-and-Forward
 
 ```text
 Collect
@@ -257,14 +374,14 @@ The synchronization strategy must tolerate repeated app restarts.
 
 ---
 
-## 13. Idempotency
+## 14. Idempotency
 
 The mobile application generates identifiers before synchronization.
 
 At minimum:
 
 ```text
-telemetryBatchId
+batchId
 eventId
 ```
 
@@ -274,9 +391,9 @@ This allows the backend to safely deduplicate.
 
 ---
 
-## 14. Background Execution
+## 15. Background Execution
 
-Background monitoring is a required capability, but the exact implementation depends on the selected framework and operating systems.
+Background monitoring is a required capability. Its exact implementation depends on Flutter-compatible platform integrations and operating-system constraints.
 
 The architecture must eventually account for:
 
@@ -291,7 +408,7 @@ This is an unresolved implementation area and should become an ADR when the mobi
 
 ---
 
-## 15. Battery
+## 16. Battery
 
 Battery state is monitored and sent to the server.
 
@@ -301,7 +418,7 @@ Sampling, GPS and sync policies should be configurable.
 
 ---
 
-## 16. Connectivity
+## 17. Connectivity
 
 Connectivity state should influence synchronization.
 
@@ -311,7 +428,7 @@ A controlled retry strategy should be implemented.
 
 ---
 
-## 17. Location
+## 18. Location
 
 The mobile application provides:
 
@@ -324,9 +441,9 @@ Do not add continuous high-frequency route tracking without a new architectural/
 
 ---
 
-## 18. SmartBox Activation
+## 19. Device Activation
 
-The mobile app exposes a QR Code used to activate the SmartBox.
+The mobile app exposes a QR Code used to activate the Device.
 
 Conceptually:
 
@@ -339,14 +456,14 @@ Customer scans
         ↓
 Server validates token
         ↓
-SmartBox activated
+Device activated
 ```
 
 The final deep-link, token and authentication flow must be coordinated with the backend.
 
 ---
 
-## 19. Networking
+## 20. Networking
 
 The transport is not fully finalized.
 
@@ -361,7 +478,7 @@ Transport choice should become an ADR when decided.
 
 ---
 
-## 20. Security
+## 21. Security
 
 Requirements include:
 
@@ -371,11 +488,11 @@ Requirements include:
 - no plaintext secret storage
 - minimal sensitive logging
 
-The exact secure-storage mechanism depends on the selected framework/platform.
+The exact secure-storage mechanism depends on the selected Flutter secure-storage approach and target platform.
 
 ---
 
-## 21. Testing Strategy
+## 22. Testing Strategy
 
 Core algorithms should run without real hardware in automated tests.
 
@@ -394,17 +511,27 @@ Platform sensor integrations should be abstracted and mockable.
 
 ---
 
-## 22. Open Architectural Decisions
+## 23. Open Architectural Decisions
 
 Still to be defined:
 
-- mobile framework
 - target platforms
+- Flutter state-management approach
 - local database/storage
-- background execution strategy
+- background execution strategy and Flutter plugins
 - transport protocol
 - secure storage solution
 - sensor API libraries
 - QR/deep-link implementation
 - exact event detection formulas
 - calibration strategy
+
+## Shared Integration References
+
+Cross-repository behavior is defined in:
+
+- `../../docs/contracts/domain-model.md`
+- `../../docs/contracts/integration-flows.md`
+- `../../docs/contracts/kpis.md`
+- `../../docs/contracts/openapi.yaml`
+- `../../docs/contracts/asyncapi.yaml`

@@ -4,13 +4,18 @@
 
 This file defines how AI coding agents must work inside the SecureDelivery Mobile repository.
 
-The mobile technology stack has not been finalized.
+The mobile technology baseline is:
 
-Agents must not select or introduce a major mobile framework unless explicitly requested.
+- Flutter
+- Dart
+
+Flutter is an accepted architectural decision for the MVP.
+
+Agents must not replace Flutter with another mobile framework unless explicitly requested and the architectural decision is updated through an ADR.
 
 Read:
 
-- the shared SecureDelivery `project.md`
+- `../docs/project.md`
 - `docs/architecture.md`
 
 before making architectural changes.
@@ -21,7 +26,7 @@ before making architectural changes.
 
 The SecureDelivery mobile application is the primary IoT device in the MVP.
 
-The test smartphone will be mounted horizontally on a flat surface of the SmartBox.
+The test smartphone will be mounted horizontally on a flat surface of the delivery box. The Flutter app is the MVP implementation of a technical `Device`; the Dashboard presents it as a SmartBox.
 
 The application is not only a UI.
 
@@ -43,6 +48,19 @@ Temperature monitoring is outside the MVP.
 
 ---
 
+## Technology Baseline
+
+The MVP mobile application uses:
+
+- Flutter
+- Dart
+
+The specific choices for state management, local database, background execution plugins, sensor plugins, secure storage and networking packages are still architectural decisions to be made.
+
+Prefer Flutter abstractions and platform channels/plugins behind explicit application interfaces so core event-detection and synchronization logic remains testable.
+
+---
+
 ## Core Engineering Priorities
 
 When tradeoffs exist, prioritize:
@@ -61,22 +79,53 @@ Do not sacrifice correctness for realtime appearance.
 
 ---
 
+## Shared Contract Policy
+
+Before implementing or changing communication between repositories, read:
+
+- `../docs/contracts/README.md`
+- `../docs/contracts/openapi.yaml`
+- `../docs/contracts/asyncapi.yaml` when realtime is involved
+- relevant contract documentation under `../docs/contracts/`
+- shared ADRs under `../docs/decisions/`
+
+The contracts under `../docs/contracts/` are authoritative.
+
+Do not invent, duplicate or silently modify cross-repository payloads.
+
+When changing a shared contract:
+
+1. update the canonical contract first;
+2. evaluate backward compatibility;
+3. update the server implementation;
+4. regenerate/update typed clients when generation is configured;
+5. update affected consumers;
+6. update tests;
+7. update architecture documentation and ADRs when required.
+
+`Device` is the canonical technical term.
+
+Do not use `SmartBox` in API paths, backend DTOs, persistence entities or cross-repository contract schemas.
+
+`SmartBox` is a product-facing UI label only.
+
 ## Agent Workflow
 
 Before implementing changes:
 
 1. Read this `AGENTS.md`.
 2. Read `docs/architecture.md`.
-3. Inspect existing framework and project conventions.
-4. Do not choose a new framework unless explicitly asked.
-5. Preserve separation between sensors, event detection, persistence, synchronization and UI.
-6. Consider background execution limitations.
-7. Consider battery impact.
-8. Consider offline behavior.
-9. Add or update meaningful tests.
-10. Avoid unrelated refactors.
-11. Update architecture documentation for architectural changes.
-12. Create/update ADRs for meaningful architectural decisions.
+3. Inspect the existing Flutter project structure and repository conventions.
+4. Follow established Flutter and Dart conventions already present in the repository.
+5. Do not replace Flutter or introduce a second application framework without an explicit architectural decision.
+6. Preserve separation between sensors, event detection, persistence, synchronization and UI.
+7. Consider background execution limitations.
+8. Consider battery impact.
+9. Consider offline behavior.
+10. Add or update meaningful tests.
+11. Avoid unrelated refactors.
+12. Update architecture documentation for architectural changes.
+13. Create/update ADRs for meaningful architectural decisions.
 
 ---
 
@@ -90,7 +139,7 @@ docs/decisions/
 
 Create or update ADRs when changes affect:
 
-- mobile framework
+- replacement or major change of the Flutter framework baseline
 - local persistence technology
 - sensor abstraction
 - event detection architecture
@@ -110,21 +159,21 @@ Do not silently override an accepted decision.
 
 ---
 
-## SmartBox Model
+## Device Model
 
-`SmartBox` is the logical delivery-box entity.
+`Device` is the canonical technical entity.
 
-The smartphone is the MVP IoT device attached to the SmartBox.
+The Flutter application is the MVP Device implementation.
 
-Do not encode assumptions that every future SmartBox will always use a smartphone.
+`SmartBox` is only a product-facing Dashboard label.
 
-The mobile application should behave as one IoT device implementation.
+Do not encode assumptions that future Devices will always be smartphones.
 
----
+All cross-repository contracts use `deviceId` and `/devices` terminology.
 
 ## Physical Test Assumption
 
-For MVP testing, the smartphone is mounted horizontally on a flat SmartBox surface.
+For MVP testing, the smartphone is mounted horizontally on a flat delivery-box surface.
 
 This provides a known reference orientation for:
 
@@ -169,32 +218,64 @@ Do not infer critical lifecycle state only from UI state.
 
 ## Sensor Sampling
 
-Initial MVP target:
+Initial MVP acquisition profile:
 
 ```text
-1 sample per second
+Raw IMU sampling:               50 Hz (~20 ms)
+Event detection:                high-frequency local processing/windows
+GPS / ground-speed sampling:    up to 1 Hz
+Normal Server telemetry:        1-minute summary
+Network telemetry batch:        normally every 1 minute
 ```
 
-Sensor sampling should be isolated behind abstractions.
+The rates must be centralized and configurable.
 
-Do not access hardware sensors directly from arbitrary UI components.
+Raw IMU stays Device-local during normal operation.
 
-Potential abstractions include:
+Maintain a rolling high-frequency evidence buffer.
 
-- MotionSensorProvider
-- LocationProvider
-- BatteryProvider
-- ConnectivityProvider
-- SensorCollector
-- EventDetectionEngine
-- TelemetryStore
-- SyncEngine
+GPS/ground-speed observations are used locally to produce navigation summaries and event context.
 
-Names may differ.
+Do not expose 50 Hz IMU data to general UI state.
 
-Separation of responsibilities matters more than exact names.
+Do not continuously synchronize raw motion data when no relevant event exists.
 
----
+## Lean Telemetry Aggregation
+
+At the end of each normal telemetry period, initially one minute, create a compact summary.
+
+MVP navigation aggregates:
+
+```text
+navigation.distance.traveled
+navigation.moving.duration
+navigation.stopped.duration
+navigation.speed.maximum
+```
+
+Use canonical SI units:
+
+```text
+distance -> m
+duration -> s
+speed    -> m/s
+```
+
+Preferred speed source is GNSS/operating-system ground speed.
+
+Do not use integrated accelerometer acceleration as the normal speed source.
+
+Initial configurable moving threshold:
+
+```text
+1.5 m/s (~5.4 km/h)
+```
+
+If GNSS speed is unavailable, a GPS-fix-based fallback may be used only with accuracy/time filtering.
+
+Persist completed summaries durably for store-and-forward.
+
+Old normal raw IMU samples may be discarded when they are outside the rolling evidence window and are not required by an event.
 
 ## Event Detection
 
@@ -203,10 +284,10 @@ Event detection happens on-device.
 Initial event types may include:
 
 ```text
-STRONG_IMPACT
-CRITICAL_INCLINATION
-POSSIBLE_FALL
-ABNORMAL_MOVEMENT
+motion.strong_impact
+motion.critical_inclination
+motion.possible_fall
+motion.abnormal_movement
 ```
 
 The exact thresholds and algorithms are not fixed yet.
@@ -223,9 +304,65 @@ Do not introduce machine learning without explicit instruction.
 
 ---
 
+## Event Speed Context
+
+When reliable navigation data is available, motion events should include:
+
+```text
+navigation.speed.at_event
+navigation.speed.average_5s_before
+navigation.speed.maximum_10s_before
+navigation.moving
+```
+
+Keep a small Device-side navigation context buffer to derive these values.
+
+Do not fabricate speed context when GNSS quality is insufficient.
+
+Speed is context for correlation and investigation, not automatic proof that speed caused an event.
+
+## Extensible Device Protocol
+
+The Mobile application owns raw-sensor interpretation.
+
+New measurements must use the generic `Observation` contract:
+
+```json
+{
+  "key": "motion.orientation.pitch",
+  "value": 42.7,
+  "unit": "deg"
+}
+```
+
+New Device-generated events must use open namespaced `eventType` strings.
+
+When adding a new sensor or detector:
+
+- use the existing Observation envelope;
+- use namespaced keys;
+- preserve original timestamps;
+- preserve event evidence;
+- include detector name/version;
+- do not request a backend contract change unless the common envelope itself is insufficient.
+
+Do not couple Device evolution to server releases unnecessarily.
+
 ## Event Evidence
 
 Every event must retain the evidence that triggered it.
+
+Initial event evidence should target a configurable rolling window around the trigger:
+
+```text
+approximately 2 seconds before
++
+trigger/event interval
++
+approximately 2 seconds after
+```
+
+At the 50 Hz baseline, evidence captures samples roughly every 20 ms.
 
 Evidence may include:
 
@@ -261,24 +398,29 @@ Data should be persisted before it is considered safe to send.
 
 ## Store-and-Forward
 
+Normal server telemetry uses durable one-minute summaries.
+
 Initial strategy:
 
 ```text
-sensor sampling: every 1 second
-telemetry batching: every 1 minute
+raw IMU:                 50 Hz, local rolling buffer
+GPS / ground speed:      up to 1 Hz, local aggregation/context
+normal telemetry:        1-minute summaries
+network batch:           normally every 1 minute
+event evidence:          high-frequency, only around relevant events
 ```
 
-The app should:
+Rules:
 
-1. collect
-2. persist locally
-3. create logical batches
-4. attempt synchronization
-5. retain data when transmission fails
-6. retry later
-7. mark data synchronized only after reliable server acknowledgement
+1. complete the one-minute summary;
+2. persist the summary durably;
+3. create/reuse an idempotent batch;
+4. attempt synchronization;
+5. if synchronization fails, retain pending summaries;
+6. when connectivity returns, send one or more accumulated summaries;
+7. remove/mark synchronized data only after valid server acknowledgement.
 
----
+Raw IMU samples that are not part of an event do not need durable long-term storage and may leave the rolling buffer when no longer relevant.
 
 ## Idempotency
 
@@ -287,7 +429,7 @@ The mobile app must generate stable unique identifiers before transmission.
 Examples:
 
 ```text
-telemetryBatchId
+batchId
 eventId
 ```
 
@@ -339,7 +481,7 @@ Monitoring is expected to run in background while enabled.
 
 Do not assume unrestricted background execution.
 
-The selected framework must eventually support the required platform behavior.
+The Flutter implementation must support the required platform behavior through appropriate Flutter/platform integrations.
 
 Architecture must consider:
 
@@ -381,9 +523,9 @@ Do not collect or persist more location data than the current product requires w
 
 ## QR Activation
 
-The mobile app exposes the SmartBox activation QR Code in the MVP.
+The mobile app exposes the Device activation QR Code in the MVP. The product UI may describe it as SmartBox activation.
 
-The QR Code should represent a secure activation flow, not merely a raw SmartBox database ID.
+The QR Code should represent a secure activation flow, not merely a raw Device database ID.
 
 The exact token and deep-link strategy should be coordinated with the backend architecture.
 
@@ -428,7 +570,7 @@ The user should clearly understand:
 - connectivity
 - battery
 - important errors
-- SmartBox identity/activation state
+- Device identity/activation state (presented as SmartBox to the user)
 
 Do not expose raw sensor streams in normal operational UI unless useful for test/debug screens.
 
@@ -470,9 +612,21 @@ Use:
 - linting
 - formatting
 
-Use TypeScript if the selected framework supports it and the team confirms that choice.
+Use Dart as the application language.
 
-Do not choose technology by assumption.
+Follow the repository's configured Dart analyzer, formatting and linting rules.
+
+Prefer strong typing and null safety.
+
+Avoid:
+
+- unnecessary `dynamic`
+- unsafe casts
+- duplicated domain models
+- scattered hardcoded thresholds
+- direct platform-plugin access from presentation widgets
+
+Do not replace Flutter or Dart by assumption.
 
 ---
 
@@ -490,6 +644,128 @@ docs: document background monitoring constraints
 ```
 
 ---
+
+## Technology Best Practices
+
+Follow official Flutter and Dart conventions and established ecosystem best practices.
+
+Prefer idiomatic Flutter solutions over patterns copied from React, web frameworks or backend architectures.
+
+Before adding a custom abstraction, check whether Flutter, Dart or the selected platform package already solves the problem cleanly.
+
+Keep the application testable even when platform plugins are involved.
+
+---
+
+## Flutter Engineering Guidelines
+
+- Use Dart null safety consistently.
+- Avoid unnecessary `dynamic`.
+- Prefer immutable models and explicit state transitions.
+- Keep widgets focused on presentation and user interaction.
+- Do not access sensors, GPS, local storage, secure storage or networking directly from arbitrary UI widgets.
+- Isolate platform plugins behind application interfaces.
+- Keep event-detection logic independent from Flutter widgets.
+- Keep synchronization logic independent from presentation code.
+- Avoid large `StatefulWidget` classes containing application logic.
+- Prefer composition over deep inheritance.
+- Centralize sensor thresholds and calibration configuration.
+- Do not scatter Android/iOS checks throughout feature code.
+- Dispose streams, subscriptions, controllers and sensor listeners correctly.
+- Avoid unnecessary widget rebuilds.
+- Keep high-frequency sensor data out of general UI state when it does not need to trigger rendering.
+- Respect app lifecycle transitions explicitly.
+- Keep async error handling explicit.
+- Do not ignore failures from local persistence or synchronization.
+- Keep platform-channel/plugin code behind replaceable boundaries.
+- Use `const` widgets where appropriate.
+- Keep domain/event logic usable in pure Dart tests whenever possible.
+
+---
+
+## IoT and Background Processing Guidelines
+
+Sensor collection, event detection, persistence and synchronization are separate concerns.
+
+Preserve this conceptual pipeline:
+
+```text
+Sensors
+  -> Collector
+  -> Event Detection
+  -> Local Persistence
+  -> Batch / Sync Engine
+  -> SecureDelivery API
+```
+
+Rules:
+
+- Do not couple sensor callbacks directly to network requests.
+- Do not require network connectivity for event detection.
+- Persist critical events before considering them safe.
+- Do not remove persisted telemetry/events until server acknowledgement confirms synchronization.
+- Do not assume perfect 1-second scheduling in background execution.
+- Preserve original timestamps even when transmission is delayed.
+- Design retries so they do not unnecessarily drain the battery.
+- Monitoring must recover safely after process/app restarts when supported by the chosen persistence/background strategy.
+
+---
+
+## Sensor and Event-Detection Guidelines
+
+- Keep raw sensor acquisition separate from derived calculations.
+- Keep angle, acceleration and impact calculations in testable pure Dart code where practical.
+- Centralize calibration and threshold configuration.
+- Preserve evidence samples that caused an event.
+- Avoid classifying driving behavior when only cargo movement is relevant.
+- Treat the horizontally mounted smartphone orientation as an explicit MVP calibration assumption.
+- Do not silently hardcode orientation assumptions across multiple files.
+- Prefer deterministic and explainable detection logic for the MVP.
+- Validate changes against recorded/simulated sensor sequences whenever practical.
+
+---
+
+## Local Persistence Guidelines
+
+- Use durable local persistence for unsynchronized telemetry and events.
+- In-memory-only buffering is not sufficient.
+- Persist stable IDs and synchronization state.
+- Make local writes resilient to app interruption.
+- Design cleanup only after server acknowledgement.
+- Avoid holding large telemetry histories in memory.
+- Use bounded queries/batches when reading pending telemetry.
+
+---
+
+## Testing Strategy
+
+Prefer:
+
+- pure Dart unit tests for event detection, angle calculations, acceleration processing and batching;
+- tests using fake/mock sensor providers;
+- tests for local persistence and recovery;
+- tests for retry and store-and-forward behavior;
+- widget tests for critical UI states and monitoring controls;
+- integration tests for platform/plugin boundaries where practical.
+
+High-value tests include:
+
+- same batch ID reused after retry;
+- event evidence preserved;
+- monitoring state transition correctness;
+- data retained after failed synchronization;
+- synchronization recovery after connectivity restoration.
+
+---
+
+## Human Developer Documentation
+
+Human developers should also read:
+
+- `docs/development-guide.pt-BR.md`
+- `docs/git-workflow.pt-BR.md`
+
+These files define practical development conventions and the Git/GitHub workflow for the repository.
 
 ## Out of Scope for MVP
 
