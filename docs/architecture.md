@@ -150,6 +150,8 @@ Monitoring should not be represented only by whether a UI toggle is checked.
 
 The monitoring coordinator owns actual monitoring state.
 
+It generates and persists the canonical `monitoringSessionId` before acquisition starts. The same UUID is used for session creation, telemetry, events, stop synchronization and retries, including when the complete lifecycle occurs offline.
+
 ---
 
 ## 7. Sensor Layer
@@ -332,15 +334,17 @@ In-memory-only buffering is insufficient.
 
 The Device aggregates normal operational telemetry into one-minute period summaries.
 
-Each summary may contain:
+Each summary contains:
 
 - Device state;
 - latest valid location;
-- `navigation.distance.traveled`;
-- `navigation.moving.duration`;
-- `navigation.stopped.duration`;
-- `navigation.speed.maximum`;
+- structured `navigation.distanceTraveledMeters`;
+- structured `navigation.movingDurationSeconds`;
+- structured `navigation.stoppedDurationSeconds`;
+- structured `navigation.maximumSpeedMetersPerSecond`;
 - future generic business-value observations.
+
+Telemetry schema version 3 also sends navigation status/source. Unavailable metric values remain `null`, not zero; only quality-accepted numeric samples contribute to each aggregate.
 
 Completed summaries are persisted locally before synchronization.
 
@@ -381,11 +385,14 @@ The mobile application generates identifiers before synchronization.
 At minimum:
 
 ```text
+monitoringSessionId
 batchId
 eventId
 ```
 
 A retry reuses the same ID.
+
+On reconnect, Mobile creates/reconciles the MonitoringSession first, uploads dependent telemetry/events, and then reconciles stop state using the persisted Device-observed `finishedAt`.
 
 This allows the backend to safely deduplicate.
 
@@ -459,7 +466,9 @@ Server validates token
 Device activated
 ```
 
-The final deep-link, token and authentication flow must be coordinated with the backend.
+The QR web link may carry activation material in its URL fragment. The web client reads it locally and sends it only in JSON request bodies to the canonical validate/confirm endpoints. Mobile uses the body-based credential-exchange endpoint. Activation material never belongs in a path or query and must be redacted from logs, traces and errors.
+
+After Customer confirmation, Mobile exchanges activation material once for a Device credential scoped to this `deviceId` and stores it in secure operating-system storage. Human user credentials are not reused as Device credentials.
 
 ---
 

@@ -170,10 +170,10 @@ Não calcule velocidade normal integrando acelerômetro, devido ao drift acumula
 A cada minuto o Device deve gerar os agregados:
 
 ```text
-navigation.distance.traveled
-navigation.moving.duration
-navigation.stopped.duration
-navigation.speed.maximum
+navigation.distanceTraveledMeters
+navigation.movingDurationSeconds
+navigation.stoppedDurationSeconds
+navigation.maximumSpeedMetersPerSecond
 ```
 
 Unidades canônicas:

@@ -129,6 +129,14 @@ Before implementing changes:
 
 ---
 
+## CI/CD Baseline
+
+The repository currently calls the centralized documentation CI from `securedelivery-main`. Do not claim to analyze, test or build the Flutter application until it is initialized.
+
+After bootstrap, extend the repository CI with the real `flutter pub get`, formatting/analyze and test commands adopted by the project. Keep GitHub Actions as the single pipeline platform, use read-only permissions by default and do not add deployment before environments, signing secrets, health checks and rollback/distribution procedures are decided.
+
+---
+
 ## Architectural Decision Records
 
 Document meaningful decisions under:
@@ -210,6 +218,8 @@ When monitoring is on:
 - synchronization is scheduled
 - connectivity is monitored
 
+Before monitoring starts, generate and durably persist the canonical `monitoringSessionId`. Reuse it for idempotent session creation, telemetry, events, stop synchronization and every retry. Monitoring must not depend on obtaining a server-generated session ID.
+
 Represent monitoring state explicitly.
 
 Do not infer critical lifecycle state only from UI state.
@@ -244,14 +254,16 @@ Do not continuously synchronize raw motion data when no relevant event exists.
 
 At the end of each normal telemetry period, initially one minute, create a compact summary.
 
-MVP navigation aggregates:
+MVP structured navigation fields:
 
 ```text
-navigation.distance.traveled
-navigation.moving.duration
-navigation.stopped.duration
-navigation.speed.maximum
+navigation.distanceTraveledMeters
+navigation.movingDurationSeconds
+navigation.stoppedDurationSeconds
+navigation.maximumSpeedMetersPerSecond
 ```
+
+Telemetry schema version 3 also requires `navigation.status` and `navigation.source`. Keep every metric key present, use `null` for unavailable values and never synthesize zero. Follow the canonical VALID/PARTIAL/UNAVAILABLE invariants.
 
 Use canonical SI units:
 
@@ -429,6 +441,7 @@ The mobile app must generate stable unique identifiers before transmission.
 Examples:
 
 ```text
+monitoringSessionId
 batchId
 eventId
 ```
@@ -436,6 +449,8 @@ eventId
 Retries must reuse the same logical identifiers.
 
 Do not generate a new identifier for every retry of the same logical payload.
+
+Persist the Device-observed `startedAt` and `finishedAt`. After reconnecting, reconcile session creation before dependent records and send the actual `finishedAt`, not synchronization time.
 
 ---
 
@@ -527,7 +542,9 @@ The mobile app exposes the Device activation QR Code in the MVP. The product UI 
 
 The QR Code should represent a secure activation flow, not merely a raw Device database ID.
 
-The exact token and deep-link strategy should be coordinated with the backend architecture.
+Use the canonical body-based activation endpoints. A web QR link may carry activation material in its URL fragment so it is read locally rather than sent in the HTTP request URL. Never place activation material in a path/query or write it to logs, traces or errors.
+
+After Customer confirmation, exchange the short-lived activation material once for the Device bearer credential. Store it using secure operating-system storage. It is scoped to this Device and separate from human user authentication.
 
 ---
 
