@@ -1,5 +1,5 @@
 class GyroscopeSample {
-  const GyroscopeSample({
+  const new({
     required this.x,
     required this.y,
     required this.z,

@@ -1,5 +1,5 @@
 class BatteryState {
-  const BatteryState({required this.level});
+  const new({required this.level});
 
   final double level;
 }

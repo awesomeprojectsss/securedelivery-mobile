@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class SecureDeliveryApp extends StatelessWidget {
-  const SecureDeliveryApp({super.key});
+  const new({super.key});
 
   @override
   Widget build(BuildContext context) {

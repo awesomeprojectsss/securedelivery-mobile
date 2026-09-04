@@ -1,5 +1,5 @@
 class AccelerometerSample {
-  const AccelerometerSample({
+  const new({
     required this.x,
     required this.y,
     required this.z,

@@ -1,5 +1,5 @@
-import 'monitoring_session.dart';
-import 'monitoring_state.dart';
+import 'package:securedelivery_mobile/monitoring/monitoring_session.dart';
+import 'package:securedelivery_mobile/monitoring/monitoring_state.dart';
 
 class MonitoringCoordinator {
   MonitoringState state = MonitoringState.off;

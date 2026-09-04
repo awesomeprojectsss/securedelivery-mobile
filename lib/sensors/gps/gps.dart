@@ -1,9 +1,9 @@
 class GpsSample {
-  const GpsSample({
+  const new({
     required this.latitude,
     required this.longitude,
-    this.speedMetersPerSecond,
     required this.timestamp,
+    this.speedMetersPerSecond,
   });
 
   final double latitude;

@@ -1,5 +1,5 @@
 class DeviceState {
-  const DeviceState({this.isActivated = false});
+  const new({this.isActivated = false});
 
   final bool isActivated;
 }

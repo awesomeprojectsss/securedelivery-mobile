@@ -1,5 +1,5 @@
 class DetectedEvent {
-  const DetectedEvent({
+  const new({
     required this.eventId,
     required this.eventType,
     required this.occurredAt,

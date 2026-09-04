@@ -1,5 +1,5 @@
 class NavigationContext {
-  const NavigationContext({
+  const new({
     this.speedAtEvent,
     this.averageSpeedPrevious5Seconds,
     this.maximumSpeedPrevious10Seconds,
