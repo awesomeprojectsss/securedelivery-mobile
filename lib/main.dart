@@ -1,5 +1,5 @@
-import 'app/app.dart';
+import 'package:securedelivery_mobile/app/bootstrap.dart';
 
-void main() {
-  runApp();
+Future<void> main() async {
+  await bootstrap();
 }
