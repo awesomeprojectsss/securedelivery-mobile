@@ -1,0 +1,1 @@
+enum MonitoringState { off, on }
