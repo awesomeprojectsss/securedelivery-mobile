@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'package:securedelivery_mobile/app/environment/app_environment.dart';
+
 class SecureDeliveryApp extends StatelessWidget {
-  const new({super.key});
+  const SecureDeliveryApp({required this.environment, super.key});
+
+  final AppEnvironment environment;
 
   @override
   Widget build(BuildContext context) {
@@ -9,7 +13,14 @@ class SecureDeliveryApp extends StatelessWidget {
       title: 'SecureDelivery',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true),
-      home: const Scaffold(body: Center(child: Text('SecureDelivery'))),
+      home: Scaffold(
+        body: Center(
+          child: Text(
+            'SecureDelivery\n${environment.name}',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
     );
   }
 }
